@@ -17,12 +17,18 @@ import java.net.URISyntaxException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.security.InvalidParameterException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.web.client.HttpClientErrorException;
 
 @Service
 public class FraseService {
+    private static final Logger logger = LoggerFactory.getLogger(FraseService.class);
     private Long ultimoId = 0L;
     private Map<Long, Frase> frases = initFrases();
 
@@ -68,6 +74,7 @@ public class FraseService {
     public void deleteById(long id) {
         if(idNaoExiste(id)) throw new ResourceNotFoundException("Nenhuma frase encontrada com o id %d!".formatted(id));
         frases.remove(id);
+        logger.info("Frase removida com sucesso");
     }
 
     public void update(long id, FrasePutBody dadosAtualizados) {
@@ -107,8 +114,11 @@ public class FraseService {
 
             HttpClient client = HttpClient.newBuilder().build();
             HttpResponse<String> resposta = client.send(traducaoReq, HttpResponse.BodyHandlers.ofString());
-            if (resposta.statusCode() == 400) {
-                throw new BadRequestException();
+            if (resposta.statusCode() >= 400) {
+                logger.error("Resposta obtida a partir do servidor do FunTranslation. Status Code: {}",resposta.statusCode());
+                throw new RuntimeException("Algum erro ocorreu!");
+            } else {
+                logger.info("Resposta obtida a partir do servidor do FunTranslation. Status Code: {}", resposta.statusCode());
             }
 
             ObjectMapper mapper = new ObjectMapper();
@@ -120,5 +130,27 @@ public class FraseService {
         } catch (URISyntaxException | IOException | InterruptedException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public List<Frase> getAll() {
+        return frases.values().stream().toList();
+    }
+
+    public List<Frase> getByPage(int page, int size) {
+        List<Frase> all = getAll();
+        int totalFrases =getTotalFrases();
+        int start = (page -1) * size;
+        int end = start + size;
+        if(end > totalFrases) end = totalFrases;
+        return all.subList(start,end);
+    }
+
+    public int getTotalFrases() {
+        return frases.size();
+    }
+
+    public int getTotalPaginas(int size) {
+        int totalFrases =getTotalFrases();
+        return (int) Math.ceil((double)totalFrases / (double)size);
     }
 }

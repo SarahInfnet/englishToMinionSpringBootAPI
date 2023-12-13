@@ -1,17 +1,18 @@
 package br.com.infnet.FunTranslations.controller;
 
 import br.com.infnet.FunTranslations.Exception.ResourceNotFoundException;
-import br.com.infnet.FunTranslations.model.Frase;
-import br.com.infnet.FunTranslations.model.FrasePostBody;
-import br.com.infnet.FunTranslations.model.FrasePutBody;
-import br.com.infnet.FunTranslations.model.ResponsePayload;
+import br.com.infnet.FunTranslations.model.*;
 import br.com.infnet.FunTranslations.service.FraseService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.InvalidParameterException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -19,18 +20,43 @@ import java.util.Map;
 public class FraseController {
     @Autowired
     FraseService fraseService;
-//Em um dos seus endpoints você deverá consumir alguma API externa à sua escolha.
-//Você deverá converter a resposta dessa chamada de JSON para um objeto java. Imprima(com Log) o status code dessa resposta.
-//Você deverá criar os testes para o seus métodos. Pelo menos um dos testes deverá ter um assertThrows. Não utilize System.out e sim o mecanismo de LOG. Utilize o Lombok.
-
     @GetMapping
-    public ResponseEntity<Map<Long,Frase>> getAllFrases() {
-        Map<Long,Frase> frases = fraseService.getAllFrases();
-        return ResponseEntity.ok(frases);
+    public ResponseEntity<?> getFrasesByPage(
+            @RequestParam(required = false, defaultValue = "10") int size,
+            @RequestParam(required = false, defaultValue = "1") int page
+    ){
+        try {
+            int MAX_RESULTS_PER_PAGE = 2000;
+            int qtdPaginas = fraseService.getTotalPaginas(size);
+            if (page < 1 || page > qtdPaginas) throw new InvalidParameterException("Parâmetro page inválido.");
+            if (size < 1 || size > MAX_RESULTS_PER_PAGE)
+                throw new InvalidParameterException("Parâmetro size inválido.");
+
+            List<Frase> frasesPagina = fraseService.getByPage(page, size);
+
+            int totalFrases = frasesPagina.size();
+            new InformacoesPayload(totalFrases, qtdPaginas);
+            InformacoesPayload infoPayload = InformacoesPayload.builder()
+                    .totalSize(totalFrases)
+                    .totalPages(qtdPaginas)
+                    .build();
+
+            HttpHeaders responseHeaders = new HttpHeaders();
+            responseHeaders.set("total-size", String.valueOf(totalFrases));
+            responseHeaders.set("total-pages", String.valueOf(qtdPaginas));
+            responseHeaders.set("Content-Type", "application/json");
+
+            FrasePayload frasePayload = new FrasePayload(frasesPagina, infoPayload);
+
+            return ResponseEntity.status(HttpStatus.OK)
+                    .headers(responseHeaders).body(frasePayload);
+        } catch (InvalidParameterException e){
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ResponsePayload(e.getMessage()));
+        } catch (Exception e){
+            return ResponseEntity.status(500).body(new ResponsePayload("Houve um erro no servidor"));
+        }
     }
 
-    //No endpoint do tipo GET você deverá receber 2 parâmetros opcionais.
-    //Algum de seus métodos deve tratar a requisição do usuário, em caso de erro retorne algum código de erro e em caso de sucesso retorne 200.
     @GetMapping("/{id}")
     public ResponseEntity<Frase> getFraseById(@PathVariable Long id) {
         try{
@@ -40,7 +66,6 @@ public class FraseController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
         }
     }
-//No Endpoint que receberá um POST você deverá receber um JSON com pelo menos um campo do tipo String, um do tipo número e um array de qualquer tipo.
     @PostMapping
     public ResponseEntity<ResponsePayload> create(@Valid @RequestBody FrasePostBody frase){
         try{
